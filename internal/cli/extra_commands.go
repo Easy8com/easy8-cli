@@ -388,11 +388,11 @@ func buildCommandCatalog() []commandInfo {
 			Name:        "easy8 issue",
 			Description: "Issue operations",
 			Subcommands: []commandInfo{
-				{Name: "easy8 issue create", Description: "Create issue"},
+				{Name: "easy8 issue create", Description: "Create issue", Flags: issuePlanningWriteFlags()},
 				{Name: "easy8 issue show", Description: "Show issue detail"},
-				{Name: "easy8 issue list", Description: "List issues"},
-				{Name: "easy8 issue search", Description: "Search issues"},
-				{Name: "easy8 issue update", Description: "Update issue"},
+				{Name: "easy8 issue list", Description: "List issues", Flags: issuePlanningFilterFlags()},
+				{Name: "easy8 issue search", Description: "Search issues", Flags: issuePlanningFilterFlags()},
+				{Name: "easy8 issue update", Description: "Update issue", Flags: issuePlanningWriteFlags()},
 			},
 		},
 		{
@@ -438,6 +438,23 @@ func buildCommandCatalog() []commandInfo {
 			Name:        "easy8 version",
 			Description: "Show version",
 		},
+	}
+}
+
+func issuePlanningWriteFlags() []flagInfo {
+	return []flagInfo{
+		{Name: "--sprint-id", Description: "Native sprint ID (positive integer)"},
+		{Name: "--story-points", Description: "Native story points (integer, including zero)"},
+		{Name: "--clear-sprint", Description: "Remove sprint with explicit null; conflicts with --sprint-id"},
+		{Name: "--clear-story-points", Description: "Clear points with explicit null; conflicts with --story-points"},
+		{Name: "--custom-fields", Description: "JSON array of {id, value} custom field updates"},
+	}
+}
+
+func issuePlanningFilterFlags() []flagInfo {
+	return []flagInfo{
+		{Name: "--sprint-id", Description: "Filter by native sprint ID"},
+		{Name: "--all-statuses", Description: "Include open and closed tasks"},
 	}
 }
 

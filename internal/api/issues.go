@@ -12,22 +12,30 @@ import (
 )
 
 type IssueListParams struct {
-	Limit      int
-	Offset     int
-	Sort       string
-	Query      string
-	Include    []string
-	IssueIDs   []int
-	AssigneeID int
-	DueDate    string
-	StatusID   int
-	PriorityID int
-	Subject    string
-	TaskTypeID int
-	ProjectID  int
+	Limit       int
+	Offset      int
+	Sort        string
+	Query       string
+	Include     []string
+	IssueIDs    []int
+	AssigneeID  int
+	DueDate     string
+	StatusID    int
+	PriorityID  int
+	Subject     string
+	TaskTypeID  int
+	ProjectID   int
+	SprintID    int
+	AllStatuses bool
 }
 
 func (c *Client) ListIssues(ctx context.Context, params IssueListParams) (IssueListResponse, error) {
+	if params.SprintID < 0 {
+		return IssueListResponse{}, fmt.Errorf("sprint id must be positive")
+	}
+	if params.AllStatuses && params.StatusID != 0 {
+		return IssueListResponse{}, fmt.Errorf("all statuses and status id cannot be combined")
+	}
 	query := url.Values{}
 	hasFilter := false
 	if params.Limit > 0 {
@@ -54,6 +62,17 @@ func (c *Client) ListIssues(ctx context.Context, params IssueListParams) (IssueL
 	}
 	if params.StatusID > 0 {
 		query.Set("status_id", strconv.Itoa(params.StatusID))
+		hasFilter = true
+	}
+	if params.AllStatuses {
+		query.Set("status_id", "*")
+		hasFilter = true
+	}
+	if params.SprintID > 0 {
+		query.Set("easy_sprint_id", strconv.Itoa(params.SprintID))
+		if params.StatusID == 0 && !params.AllStatuses {
+			query.Set("status_id", "o")
+		}
 		hasFilter = true
 	}
 	if params.PriorityID > 0 {
@@ -91,6 +110,16 @@ func (c *Client) ListIssues(ctx context.Context, params IssueListParams) (IssueL
 	if err := c.doJSON(ctx, "GET", "/issues.json", query, nil, &resp); err != nil {
 		return IssueListResponse{}, err
 	}
+	if resp.raw == nil {
+		return IssueListResponse{}, fmt.Errorf("empty issue list response")
+	}
+	if params.SprintID > 0 {
+		for _, issue := range resp.Issues {
+			if err := issue.verifySprintFilter(params.SprintID); err != nil {
+				return IssueListResponse{}, err
+			}
+		}
+	}
 	return resp, nil
 }
 
@@ -107,6 +136,9 @@ func (c *Client) GetIssue(ctx context.Context, id int, include []string) (IssueR
 	var resp IssueResponse
 	if err := c.doJSON(ctx, "GET", path, query, nil, &resp); err != nil {
 		return IssueResponse{}, err
+	}
+	if resp.Issue.ID != id {
+		return IssueResponse{}, fmt.Errorf("invalid issue response: expected issue #%d, got #%d", id, resp.Issue.ID)
 	}
 	return resp, nil
 }
@@ -161,6 +193,9 @@ func (c *Client) CreateIssue(ctx context.Context, input IssueInput) (IssueRespon
 	if err := c.doJSON(ctx, "POST", "/issues.json", nil, request, &resp); err != nil {
 		return IssueResponse{}, err
 	}
+	if resp.Issue.ID == 0 {
+		return IssueResponse{}, fmt.Errorf("empty issue create response")
+	}
 	return resp, nil
 }
 
@@ -175,6 +210,9 @@ func (c *Client) UpdateIssue(ctx context.Context, id int, input IssueInput) (Iss
 	request := IssueRequest{Issue: input}
 	if err := c.doJSON(ctx, "PUT", path, nil, request, &resp); err != nil {
 		return IssueResponse{}, err
+	}
+	if resp.Issue.ID != 0 && resp.Issue.ID != id {
+		return IssueResponse{}, fmt.Errorf("invalid issue update response: expected issue #%d, got #%d; the HTTP update may have succeeded partially; no rollback was performed", id, resp.Issue.ID)
 	}
 	return resp, nil
 }

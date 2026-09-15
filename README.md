@@ -143,6 +143,7 @@ Invalid integer and boolean environment values produce a warning on stderr.
 easy8 issue list --limit 10
 easy8 issue list --limit 10 --sort "priority:desc,due_date"
 easy8 issue list --q "onboarding"
+easy8 issue list --sprint-id 34 --all-statuses
 ```
 
 ### Show Issue Detail
@@ -235,6 +236,71 @@ Issue update notes:
 - `--attachment-description` is optional and applies to the immediately preceding `--attachment`.
 - `--notes` is optional, including attachment-only updates.
 
+### Sprint Planning and Custom Fields
+
+Issue create/update support native agile fields and custom fields:
+
+```bash
+easy8 issue update 123 --sprint-id 34 --story-points 5 --quiet
+easy8 issue update 123 --story-points 0 --quiet
+easy8 issue update 123 --clear-sprint --clear-story-points --quiet
+easy8 issue update 123 --custom-fields '[{"id":7,"value":"Planning"},{"id":8,"value":["a","b"]}]' --quiet
+```
+
+- `--sprint-id` sends `easy_sprint_id` (a positive integer).
+- `--story-points` sends integer `easy_story_points`; zero is a value, not a clear.
+- `--clear-sprint` and `--clear-story-points` send explicit JSON `null`. Each
+  conflicts with its corresponding set flag. Omitted fields stay unchanged.
+- `--custom-fields` accepts one JSON array of objects containing exactly `id`
+  (positive integer) and `value`. Values preserve JSON types, including arrays,
+  numbers and null. Duplicate IDs are rejected. Only supplied fields are sent;
+  the server validates field formats, visibility and permissions.
+- Native sprint/story-point fields are distinct from `custom_fields`; they are
+  not custom-field IDs. The Easy8 server's agile plugin and model rules determine
+  whether fields can be read or changed.
+
+Find task records using a known sprint ID:
+
+```bash
+easy8 issue list --sprint-id 34 --all-statuses --quiet
+easy8 issue search --sprint-id 34 --project-id 12 --all-statuses --quiet
+```
+
+Sprint filtering explicitly defaults to open tasks (`status_id=o`) unless a
+status or `--all-statuses` is supplied. The CLI checks every returned task's
+`easy_sprint.id` against the requested sprint; missing/inaccessible metadata or
+an unrelated task fails the command instead of printing a broadened list.
+
+`--all-statuses` sends `status_id=*` to include closed tasks. On search it cannot
+be combined with `--status` or `--status-id`. Sprint discovery itself is available
+through the Easy8 UI or the plugin's MCP `easy8_agile_sprints_list/get` tools.
+
+Human detail/table output includes available sprint, story-point and custom-field
+values. After an empty successful update response, the CLI reads the issue back.
+Explicitly supplied agile fields are verified against create/update responses
+or the update readback: sprint object ID, integer points (JSON number or integer
+string), and explicit nulls for clears. Missing fields do not prove success.
+String story points are supported because the Easy8 agile Swagger publishes
+them as strings while the model uses an integer; other known REST field types
+remain strict.
+
+If readback fails or requested values cannot be verified, the CLI exits nonzero
+without successful output. The error states that the HTTP write may have
+succeeded partially and that no rollback was performed. Inspect the issue before
+retrying it. A response with the wrong issue ID also fails.
+
+**Current REST limitation:** Easy8's issue REST endpoint omits `easy_sprint`
+after a successful clear, but also omits it when the field is inaccessible.
+Consequently, `--clear-sprint` can remove the sprint and still exit nonzero
+because the result cannot be verified. Check the task before retrying. The CLI
+does not treat omission as proof of clearing. This change does not modify the
+server's REST contract. The current endpoint returns explicit null for readable
+cleared story points, so `--clear-story-points` can be verified.
+
+New human-rendered sprint/custom-field labels and values escape control characters
+such as newline, tab and ESC. Story points display zero as `0`, null as `null`,
+and an absent field as an empty table cell (omitted detail line).
+
 ## Product Backlog Items
 
 ### List PBIs
@@ -275,6 +341,17 @@ Entity and helper commands support two machine-readable modes:
 
 - `--json`: envelope format with `ok`, `data`, `summary`, and optional `breadcrumbs` / `context`
 - `--quiet`: raw API-shaped JSON data
+
+For issue list/search/show/create/update, quiet output and envelope `data`
+preserve the **complete issue API response**, including unknown plugin fields,
+nested metadata, custom fields, nulls, zeroes, empty arrays and numeric precision.
+No missing properties are synthesized and no server values are converted between
+strings and numbers. JSON formatting may change. Invalid JSON/API responses
+remain errors. For an empty update response, the preserved document is the
+subsequent issue readback.
+
+Issue lists require an array of tasks with positive IDs. `issues: null`, null
+entries, empty objects and nonpositive IDs are invalid; `issues: []` is valid.
 
 Examples:
 
