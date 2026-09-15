@@ -264,6 +264,8 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	var doneRatio optionalInt
 	fs.Var(&parentID, "parent-id", "Parent issue ID")
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
+	fields := issueFieldFlags{}
+	fields.register(fs)
 	attachmentArgs := issueAttachmentArgs{}
 	fs.Var(&issueAttachmentPathValue{args: &attachmentArgs}, "attachment", "Attachment file path (repeatable)")
 	fs.Var(&issueAttachmentDescriptionValue{args: &attachmentArgs}, "attachment-description", "Description for the preceding --attachment")
@@ -308,6 +310,9 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		AuthorID:     intPtr(*authorID),
 		AssignedToID: intPtr(*assignedToID),
 	}
+	if err := fields.apply(&input); err != nil {
+		return usageError(err)
+	}
 	if parentID.set {
 		if parentID.value <= 0 {
 			return usageError(fmt.Errorf("--parent-id must be greater than 0"))
@@ -340,6 +345,9 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	resp, err := client.CreateIssue(context.Background(), input)
 	if err != nil {
 		return apiError(err)
+	}
+	if err := resp.Issue.VerifyAgileFields(input); err != nil {
+		return apiError(fmt.Errorf("issue #%d create could not be verified: %v; the HTTP create may have succeeded partially; no rollback was performed", resp.Issue.ID, err))
 	}
 
 	if *quietOut {
@@ -422,6 +430,9 @@ func runIssueList(args []string, cfg config.Config, client *api.Client) int {
 	offset := fs.Int("offset", 0, "Offset")
 	sort := fs.String("sort", "", "Sort expression")
 	query := fs.String("q", "", "Free-text query (easy_query_q)")
+	var sprintID optionalInt
+	fs.Var(&sprintID, "sprint-id", "Native sprint ID filter (positive integer)")
+	allStatuses := fs.Bool("all-statuses", false, "Include open and closed tasks")
 	include := fs.String("include", "", "Include fields (comma-separated)")
 	jsonOut := fs.Bool("json", false, "JSON output")
 	quietOut := fs.Bool("quiet", false, "Raw JSON output without envelope")
@@ -434,10 +445,15 @@ func runIssueList(args []string, cfg config.Config, client *api.Client) int {
 	}
 
 	params := api.IssueListParams{
-		Limit:  *limit,
-		Offset: *offset,
-		Sort:   strings.TrimSpace(*sort),
-		Query:  strings.TrimSpace(*query),
+		Limit:       *limit,
+		Offset:      *offset,
+		Sort:        strings.TrimSpace(*sort),
+		Query:       strings.TrimSpace(*query),
+		SprintID:    sprintID.value,
+		AllStatuses: *allStatuses,
+	}
+	if sprintID.set && sprintID.value <= 0 {
+		return usageError(fmt.Errorf("--sprint-id must be greater than 0"))
 	}
 	if strings.TrimSpace(*include) != "" {
 		params.Include = splitComma(*include)
@@ -472,6 +488,9 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 	var priorityID optionalInt
 	var taskTypeID optionalInt
 	var projectID optionalInt
+	var sprintID optionalInt
+	fs.Var(&sprintID, "sprint-id", "Native sprint ID filter (positive integer)")
+	allStatuses := fs.Bool("all-statuses", false, "Include open and closed tasks; conflicts with --status and --status-id")
 	fs.Var(&assigneeID, "assignee-id", "Assignee user ID")
 	fs.Var(&statusID, "status-id", "Status ID")
 	fs.Var(&priorityID, "priority-id", "Priority ID")
@@ -501,6 +520,12 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 		return usageError(err)
 	}
 
+	if sprintID.set && sprintID.value <= 0 {
+		return usageError(fmt.Errorf("--sprint-id must be greater than 0"))
+	}
+	if *allStatuses && (statusID.set || strings.TrimSpace(status) != "") {
+		return usageError(fmt.Errorf("--all-statuses cannot be combined with --status or --status-id"))
+	}
 	resolvedAssigneeID, err := resolveAssigneeID(context.Background(), client, assigneeID, assignee)
 	if err != nil {
 		return usageError(err)
@@ -523,22 +548,24 @@ func runIssueSearch(args []string, cfg config.Config, client *api.Client) int {
 	}
 
 	queryValue := strings.TrimSpace(*query)
-	if queryValue == "" && resolvedAssigneeID == 0 && resolvedStatusID == 0 && resolvedPriorityID == 0 && resolvedTaskTypeID == 0 && resolvedProjectID == 0 && strings.TrimSpace(dueDate) == "" && strings.TrimSpace(subject) == "" {
+	if queryValue == "" && !sprintID.set && !*allStatuses && resolvedAssigneeID == 0 && resolvedStatusID == 0 && resolvedPriorityID == 0 && resolvedTaskTypeID == 0 && resolvedProjectID == 0 && strings.TrimSpace(dueDate) == "" && strings.TrimSpace(subject) == "" {
 		return usageError(fmt.Errorf("at least one filter is required (e.g. --q, --status, --assignee)"))
 	}
 
 	params := api.IssueListParams{
-		Limit:      *limit,
-		Offset:     *offset,
-		Sort:       strings.TrimSpace(*sort),
-		Query:      queryValue,
-		DueDate:    strings.TrimSpace(dueDate),
-		Subject:    strings.TrimSpace(subject),
-		AssigneeID: resolvedAssigneeID,
-		StatusID:   resolvedStatusID,
-		PriorityID: resolvedPriorityID,
-		TaskTypeID: resolvedTaskTypeID,
-		ProjectID:  resolvedProjectID,
+		Limit:       *limit,
+		Offset:      *offset,
+		Sort:        strings.TrimSpace(*sort),
+		Query:       queryValue,
+		DueDate:     strings.TrimSpace(dueDate),
+		Subject:     strings.TrimSpace(subject),
+		AssigneeID:  resolvedAssigneeID,
+		StatusID:    resolvedStatusID,
+		PriorityID:  resolvedPriorityID,
+		TaskTypeID:  resolvedTaskTypeID,
+		ProjectID:   resolvedProjectID,
+		SprintID:    sprintID.value,
+		AllStatuses: *allStatuses,
 	}
 	if strings.TrimSpace(*include) != "" {
 		params.Include = splitComma(*include)
@@ -585,6 +612,8 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	fs.Var(&parentID, "parent-id", "Parent issue ID")
 	fs.Var(&assignedToID, "assigned-to-id", "Assigned to user ID")
 	fs.Var(&doneRatio, "done-ratio", "Done ratio (0-100)")
+	fields := issueFieldFlags{}
+	fields.register(fs)
 	notes := fs.String("notes", "", "Notes (journal entry)")
 	attachmentArgs := issueAttachmentArgs{}
 	fs.Var(&issueAttachmentPathValue{args: &attachmentArgs}, "attachment", "Attachment file path (repeatable)")
@@ -608,6 +637,9 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	}
 
 	input := api.IssueInput{}
+	if err := fields.apply(&input); err != nil {
+		return usageError(err)
+	}
 	if strings.TrimSpace(*subject) != "" {
 		input.Subject = stringPtr(*subject)
 	}
@@ -655,10 +687,12 @@ func runIssueUpdate(args []string, cfg config.Config, client *api.Client) int {
 	if resp.Issue.ID == 0 {
 		getResp, getErr := client.GetIssue(context.Background(), *id, nil)
 		if getErr != nil {
-			fmt.Fprintf(os.Stdout, "Issue #%d updated.\n", *id)
-			return 0
+			return apiError(fmt.Errorf("issue #%d update readback failed: %v; the HTTP update may have succeeded partially; no rollback was performed", *id, getErr))
 		}
 		resp = getResp
+	}
+	if err := resp.Issue.VerifyAgileFields(input); err != nil {
+		return apiError(fmt.Errorf("issue #%d update could not be verified: %v; the HTTP update may have succeeded partially; no rollback was performed", *id, err))
 	}
 	if *quietOut {
 		return outputJSON(resp)
@@ -968,6 +1002,7 @@ func printIssueUsage() {
 		"  easy8 issue show 123 --quiet",
 		"  easy8 issue show --id 123",
 		"  easy8 issue list --limit 10",
+		"  easy8 issue list --sprint-id 34 --all-statuses --quiet",
 		"  easy8 issue search --q \"onboarding\"",
 		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
 		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
@@ -975,6 +1010,9 @@ func printIssueUsage() {
 		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment ./spec.pdf --attachment-description \"Specification\"",
 		"  easy8 issue update 123 --status-id 5",
 		"  easy8 issue update 123 --parent-id 100",
+		"  easy8 issue update 123 --sprint-id 34 --story-points 5",
+		"  easy8 issue update 123 --clear-sprint --clear-story-points",
+		`  easy8 issue update 123 --custom-fields '[{"id":7,"value":["a","b"]}]'`,
 		"  easy8 issue update 123 --attachment ./error.log",
 		"  easy8 issue update 123 --attachment ./screenshot.png --attachment-description \"Failure screenshot\"",
 		"  easy8 issue update --id 123 --status-id 5",

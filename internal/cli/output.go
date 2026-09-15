@@ -46,11 +46,11 @@ func outputJSONEnvelope(data any, summary string, breadcrumbs []outputBreadcrumb
 
 func outputIssues(issues []api.Issue) int {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tSubject\tStatus\tAssignee\tUpdated")
+	fmt.Fprintln(w, "ID\tSubject\tStatus\tAssignee\tUpdated\tSprint\tStory points\tCustom fields")
 	for _, issue := range issues {
 		status := nameOrEmpty(issue.Status)
 		assignee := nameOrEmpty(issue.AssignedTo)
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", issue.ID, issue.Subject, status, assignee, issue.UpdatedOn)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", issue.ID, issue.Subject, status, assignee, issue.UpdatedOn, sprintLabel(issue.EasySprint), jsonValueLabel(issue.EasyStoryPoints), customFieldsLabel(issue.CustomFields))
 	}
 	if err := w.Flush(); err != nil {
 		fmt.Fprintln(os.Stderr, "output error:", err)
@@ -77,6 +77,18 @@ func outputIssueDetail(issue api.Issue) int {
 	fmt.Fprintf(w, "Done:\t%d%%\n", issue.DoneRatio)
 	fmt.Fprintf(w, "Created:\t%s\n", issue.CreatedOn)
 	fmt.Fprintf(w, "Updated:\t%s\n", issue.UpdatedOn)
+	if len(issue.EasySprint) > 0 {
+		fmt.Fprintf(w, "Sprint:\t%s\n", sprintLabel(issue.EasySprint))
+	}
+	if len(issue.EasyStoryPoints) > 0 {
+		fmt.Fprintf(w, "Story points:\t%s\n", jsonValueLabel(issue.EasyStoryPoints))
+	}
+	if len(issue.CustomFields) > 0 {
+		fmt.Fprintln(w, "Custom fields:")
+		for _, field := range issue.CustomFields {
+			fmt.Fprintf(w, "  %s (#%d):\t%s\n", escapeFieldControls(field.Name), field.ID, jsonValueLabel(field.Value))
+		}
+	}
 	if issue.Description != "" {
 		fmt.Fprintf(w, "\nDescription:\n%s\n", issue.Description)
 	}

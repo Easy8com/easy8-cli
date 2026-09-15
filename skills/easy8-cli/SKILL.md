@@ -119,6 +119,9 @@ easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-
 easy8 issue update 124 --status-id 5 --quiet
 easy8 issue update 124 --done-ratio 80 --notes "progress update" --quiet
 easy8 issue update 124 --parent-id 100 --quiet
+easy8 issue update 124 --sprint-id 34 --story-points 5 --quiet
+easy8 issue update 124 --clear-sprint --clear-story-points --quiet
+easy8 issue update 124 --custom-fields '[{"id":7,"value":["a","b"]}]' --quiet
 easy8 issue update 124 --subject "New title" --description "Updated text" --quiet
 easy8 issue update 124 --attachment "./build.log" --quiet
 easy8 issue update 124 --attachment "./screenshot.png" --attachment-description "Failure screenshot" --quiet
@@ -136,6 +139,25 @@ Issue update expects IDs for lookup fields:
 - `--priority-id`
 - `--assigned-to-id`
 - `--parent-id`
+
+Native agile fields are `easy_sprint_id` / `easy_story_points`, separate from
+custom fields. Set flags take integers; zero story points remains zero. Clear
+flags send explicit null and conflict with the corresponding set flags. Omitted
+fields stay unchanged. Custom-field JSON is an array of `{id, value}` objects.
+
+Sprint filtering:
+
+```bash
+easy8 issue list --sprint-id 34 --all-statuses --quiet
+easy8 issue search --sprint-id 34 --project-id 12 --all-statuses --quiet
+```
+
+`--all-statuses` includes closed tasks and conflicts with search `--status` /
+`--status-id`. Sprint IDs can be discovered in the Easy8 UI or via the agile MCP
+sprint list/get tools. Server permissions and model rules apply to every write.
+Sprint filters default to open tasks unless a status/all-statuses is explicit.
+Every returned task must have a matching sprint object ID; unavailable metadata
+or mismatched results cause an error rather than a broadened result list.
 
 ### PBI detail
 
@@ -170,6 +192,21 @@ Use `easy8 update --quiet` only when the user asks to update the easy8 CLI immed
 
 - `--quiet`: raw API-shaped JSON (preferred for parsing).
 - `--json`: envelope with `ok`, `data`, `summary`, optional `breadcrumbs/context`.
+
+Issue machine output preserves the full API document, including unknown nested
+plugin/custom fields and original JSON types. After an empty successful update,
+the CLI returns the readback document. Requested agile values are checked in
+create/update results, including zero, null and number/string integer points.
+Missing/mismatched values or failed readback exit nonzero with no success output;
+the HTTP write may have succeeded partially and no rollback was performed.
+Do not blindly repeat that write. Wrong issue IDs and malformed issue lists
+(null entries or nonpositive IDs) also fail; an empty array is valid.
+
+The current Easy8 REST endpoint omits `easy_sprint` after clearing, just as it
+does for inaccessible sprint fields. Therefore `--clear-sprint` may perform the
+write but exit nonzero because the result cannot be verified. Check the task;
+do not retry automatically or interpret omission as confirmed clearing.
+Readable cleared story points are returned as explicit null by that endpoint.
 
 After fetching entity, return a short brief:
 
