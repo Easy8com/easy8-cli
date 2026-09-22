@@ -108,10 +108,12 @@ easy8 issue search --q "<user text>" --quiet
 ### Issue create (only explicit user request)
 
 ```bash
-easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --quiet
-easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --parent-id 100 --quiet
-easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --attachment-description "Specification" --quiet
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --assigned-to-id 2 --quiet
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --assigned-to-id 2 --parent-id 100 --quiet
+easy8 issue create --subject "New title" --project-id 1 --tracker-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --attachment-description "Specification" --quiet
 ```
+
+`--status-id`, `--priority-id`, and `--author-id` are optional. Omit them to leave default selection to the server unless the user has configured CLI defaults. Explicit flags override configured defaults; passing `0` omits the field even when a CLI default is set. Report any server-side validation errors.
 
 ### Issue update (only explicit user request)
 
@@ -198,5 +200,5 @@ After fetching entity, return a short brief:
 - `change issue #123 done ratio to 80` -> `easy8 issue update 123 --done-ratio 80 --quiet`
 - `attach ./build.log to issue #123` -> `easy8 issue update 123 --attachment "./build.log" --quiet`
 - `attach ./shot.png to issue #123 with description "Failure screenshot"` -> `easy8 issue update 123 --attachment "./shot.png" --attachment-description "Failure screenshot" --quiet`
-- `create issue "Fix login" with attachment ./spec.pdf` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --quiet`
-- `create issue "Fix login" under #100` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --parent-id 100 --quiet`
+- `create issue "Fix login" with attachment ./spec.pdf` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --assigned-to-id 2 --attachment "./spec.pdf" --quiet`
+- `create issue "Fix login" under #100` -> `easy8 issue create --subject "Fix login" --project-id 1 --tracker-id 1 --assigned-to-id 2 --parent-id 100 --quiet`

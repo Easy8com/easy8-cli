@@ -37,14 +37,15 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
 - `GET /users.json` -- paginated, requires `set_filter=1`
 - `GET /projects.json` -- paginated, requires `set_filter=1`
 
-## Create issue required fields (per swagger)
+## Create issue fields
+- CLI-required fields (IDs can come from configured defaults):
 - `subject`
 - `project_id`
 - `tracker_id`
-- `status_id`
-- `priority_id`
-- `author_id`
 - `assigned_to_id`
+- Optional fields: `status_id`, `priority_id`, `author_id`.
+- Omit optional fields when their effective value is zero so the server can apply defaults and workflow rules.
+- Explicit flags override config/env defaults; explicit zero omits the field.
 
 ## CLI command map
 - `easy8 issue create`
@@ -109,8 +110,8 @@ easy8-cli project. Keep it short, pragmatic, and consistent with the API.
   when `EASY8_BASE_URL` / `EASY8_API_KEY` are not set.
 
 ## Version
-- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.8" -o easy8 ./cmd/easy8`
-- Defaults to `0.1.8` when not set.
+- Set at build time: `go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.9" -o easy8 ./cmd/easy8`
+- Defaults to `0.1.9` when not set.
 
 ## Extension guidance
 - Keep API client in a small internal package (e.g., `internal/api`).

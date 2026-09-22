@@ -180,7 +180,17 @@ For assignee, status, priority, task type, and project you can use either name o
 
 ### Create Issue
 
-The Easy8 API requires these fields when creating an issue: `subject`, `project_id`, `tracker_id`, `status_id`, `priority_id`, `author_id`, and `assigned_to_id`.
+The CLI requires `subject`, `project_id`, `tracker_id`, and `assigned_to_id`. IDs can also come from configured defaults.
+
+`--status-id`, `--priority-id`, and `--author-id` are optional. When neither a flag nor a nonzero configured default supplies a value, the field is omitted from the request so the server can apply its defaults and workflow rules. Explicit flags override configured defaults; passing `0` omits that field even if a default is configured. Any server-side validation errors are reported by the CLI.
+
+Minimal example:
+
+```bash
+easy8 issue create --subject "Update net-smtp gem" --project-id 35 --tracker-id 8 --assigned-to-id 6
+```
+
+With explicit overrides and a parent issue:
 
 ```bash
 easy8 issue create \
@@ -205,9 +215,6 @@ easy8 issue create \
   --subject "Fix onboarding" \
   --project-id 1 \
   --tracker-id 1 \
-  --status-id 1 \
-  --priority-id 1 \
-  --author-id 1 \
   --assigned-to-id 2 \
   --attachment ./spec.pdf \
   --attachment-description "Specification" \
@@ -389,7 +396,7 @@ go build -o easy8 ./cmd/easy8
 Build with a version stamp:
 
 ```bash
-go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.8" -o easy8 ./cmd/easy8
+go build -ldflags "-X easy8-cli/internal/cli.Version=0.1.9" -o easy8 ./cmd/easy8
 ```
 
 Run without installing:

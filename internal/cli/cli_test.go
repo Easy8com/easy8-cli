@@ -32,7 +32,7 @@ func TestVersionCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("code = %d", code)
 	}
-	if !strings.Contains(stdout, "0.1.8") {
+	if !strings.Contains(stdout, "0.1.9") {
 		t.Fatalf("unexpected stdout: %s", stdout)
 	}
 }
@@ -673,6 +673,165 @@ func TestIssueCreateJSONOutput(t *testing.T) {
 	}
 	if resp.Issue.ID != 202 {
 		t.Fatalf("unexpected issue id: %d", resp.Issue.ID)
+	}
+}
+
+func TestIssueCreateOptionalDefaults(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		defaults config.Defaults
+		env      map[string]string
+		want     map[string]string
+	}{
+		{name: "omitted fields use server defaults"},
+		{
+			name: "explicit status only",
+			args: []string{"--status-id", "2"},
+			want: map[string]string{"status_id": "2"},
+		},
+		{
+			name: "explicit priority only",
+			args: []string{"--priority-id", "3"},
+			want: map[string]string{"priority_id": "3"},
+		},
+		{
+			name: "explicit author only",
+			args: []string{"--author-id", "4"},
+			want: map[string]string{"author_id": "4"},
+		},
+		{
+			name: "explicit fields",
+			args: []string{"--status-id", "2", "--priority-id", "3", "--author-id", "4"},
+			want: map[string]string{"status_id": "2", "priority_id": "3", "author_id": "4"},
+		},
+		{
+			name:     "config defaults",
+			defaults: config.Defaults{StatusID: 5, PriorityID: 6, AuthorID: 7},
+			want:     map[string]string{"status_id": "5", "priority_id": "6", "author_id": "7"},
+		},
+		{
+			name:     "environment overrides config",
+			defaults: config.Defaults{StatusID: 5, PriorityID: 6, AuthorID: 7},
+			env: map[string]string{
+				"EASY8_DEFAULT_STATUS_ID":   "8",
+				"EASY8_DEFAULT_PRIORITY_ID": "9",
+				"EASY8_DEFAULT_AUTHOR_ID":   "10",
+			},
+			want: map[string]string{"status_id": "8", "priority_id": "9", "author_id": "10"},
+		},
+		{
+			name:     "flags override config and environment",
+			args:     []string{"--status-id", "2", "--priority-id", "3", "--author-id", "4"},
+			defaults: config.Defaults{StatusID: 5, PriorityID: 6, AuthorID: 7},
+			env: map[string]string{
+				"EASY8_DEFAULT_STATUS_ID":   "8",
+				"EASY8_DEFAULT_PRIORITY_ID": "9",
+				"EASY8_DEFAULT_AUTHOR_ID":   "10",
+			},
+			want: map[string]string{"status_id": "2", "priority_id": "3", "author_id": "4"},
+		},
+		{
+			name:     "zero flags omit configured fields",
+			args:     []string{"--status-id", "0", "--priority-id", "0", "--author-id", "0"},
+			defaults: config.Defaults{StatusID: 5, PriorityID: 6, AuthorID: 7},
+		},
+		{
+			name:     "zero environment omits configured fields",
+			defaults: config.Defaults{StatusID: 5, PriorityID: 6, AuthorID: 7},
+			env: map[string]string{
+				"EASY8_DEFAULT_STATUS_ID":   "0",
+				"EASY8_DEFAULT_PRIORITY_ID": "0",
+				"EASY8_DEFAULT_AUTHOR_ID":   "0",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			requests := make(chan map[string]json.RawMessage, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/issues.json" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				var request struct {
+					Issue map[string]json.RawMessage `json:"issue"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Errorf("decode request: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				requests <- request.Issue
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"issue":{"id":202,"subject":"Update net-smtp gem"}}`))
+			}))
+			defer server.Close()
+			setTestEnv(t, server.URL)
+			setWorkingDir(t, t.TempDir())
+			t.Setenv("EASY8_AUTOUPDATE", "false")
+			for _, name := range []string{"EASY8_DEFAULT_STATUS_ID", "EASY8_DEFAULT_PRIORITY_ID", "EASY8_DEFAULT_AUTHOR_ID"} {
+				t.Setenv(name, "")
+			}
+			for name, value := range tt.env {
+				t.Setenv(name, value)
+			}
+			if _, err := config.SaveGlobal(config.Config{Defaults: tt.defaults}); err != nil {
+				t.Fatalf("save config: %v", err)
+			}
+
+			args := []string{"issue", "create", "--subject", "Update net-smtp gem", "--project-id", "35", "--tracker-id", "8", "--assigned-to-id", "6", "--quiet"}
+			stdout, stderr, code := captureRun(t, append(args, tt.args...))
+			if code != 0 {
+				t.Fatalf("code = %d stderr=%s", code, stderr)
+			}
+			var response api.IssueResponse
+			if err := json.Unmarshal([]byte(stdout), &response); err != nil || response.Issue.ID != 202 {
+				t.Fatalf("unexpected response: %s (error: %v)", stdout, err)
+			}
+			select {
+			case issue := <-requests:
+				for name, want := range map[string]string{"subject": `"Update net-smtp gem"`, "project_id": "35", "tracker_id": "8", "assigned_to_id": "6"} {
+					if got := string(issue[name]); got != want {
+						t.Errorf("%s = %s, want %s", name, got, want)
+					}
+				}
+				for _, name := range []string{"status_id", "priority_id", "author_id"} {
+					got, present := issue[name]
+					want, expected := tt.want[name]
+					if present != expected || (expected && string(got) != want) {
+						t.Errorf("%s = %s (present=%t), want %s (present=%t)", name, got, present, want, expected)
+					}
+				}
+			default:
+				t.Fatal("expected create request")
+			}
+		})
+	}
+}
+
+func TestIssueCreateServerValidationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"errors":["Status cannot be blank"]}`))
+	}))
+	defer server.Close()
+	setTestEnv(t, server.URL)
+	setWorkingDir(t, t.TempDir())
+	t.Setenv("EASY8_AUTOUPDATE", "false")
+	for _, name := range []string{"EASY8_DEFAULT_STATUS_ID", "EASY8_DEFAULT_PRIORITY_ID", "EASY8_DEFAULT_AUTHOR_ID"} {
+		t.Setenv(name, "")
+	}
+
+	_, stderr, code := captureRun(t, []string{"issue", "create", "--subject", "Update net-smtp gem", "--project-id", "35", "--tracker-id", "8", "--assigned-to-id", "6"})
+	if code != 1 {
+		t.Fatalf("code = %d stderr=%s", code, stderr)
+	}
+	if !strings.Contains(stderr, "422") || !strings.Contains(stderr, "Status cannot be blank") {
+		t.Fatalf("unexpected stderr: %s", stderr)
 	}
 }
 

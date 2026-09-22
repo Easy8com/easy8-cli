@@ -17,7 +17,7 @@ import (
 )
 
 // Version can be overridden at build time via -ldflags "-X easy8-cli/internal/cli.Version=..."
-var Version = "0.1.8"
+var Version = "0.1.9"
 
 const setupBanner = `                                   ┌─────────┐
 ███████╗ █████╗ ███████╗██╗   ██╗  │ ███████ │
@@ -254,10 +254,10 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	description := fs.String("description", "", "Issue description")
 	projectID := fs.Int("project-id", cfg.Defaults.ProjectID, "Project ID")
 	trackerID := fs.Int("tracker-id", cfg.Defaults.TrackerID, "Tracker ID")
-	statusID := fs.Int("status-id", cfg.Defaults.StatusID, "Status ID")
-	priorityID := fs.Int("priority-id", cfg.Defaults.PriorityID, "Priority ID")
+	statusID := fs.Int("status-id", cfg.Defaults.StatusID, "Status ID (optional; 0 uses server default)")
+	priorityID := fs.Int("priority-id", cfg.Defaults.PriorityID, "Priority ID (optional; 0 uses server default)")
 	var parentID optionalInt
-	authorID := fs.Int("author-id", cfg.Defaults.AuthorID, "Author ID")
+	authorID := fs.Int("author-id", cfg.Defaults.AuthorID, "Author ID (optional; 0 uses server default)")
 	assignedToID := fs.Int("assigned-to-id", cfg.Defaults.AssignedToID, "Assigned to user ID")
 	startDate := fs.String("start-date", "", "Start date (YYYY-MM-DD)")
 	dueDate := fs.String("due-date", "", "Due date (YYYY-MM-DD)")
@@ -286,15 +286,6 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 	if err := requireInt("tracker-id", *trackerID); err != nil {
 		return usageError(err)
 	}
-	if err := requireInt("status-id", *statusID); err != nil {
-		return usageError(err)
-	}
-	if err := requireInt("priority-id", *priorityID); err != nil {
-		return usageError(err)
-	}
-	if err := requireInt("author-id", *authorID); err != nil {
-		return usageError(err)
-	}
 	if err := requireInt("assigned-to-id", *assignedToID); err != nil {
 		return usageError(err)
 	}
@@ -303,10 +294,16 @@ func runIssueCreate(args []string, cfg config.Config, client *api.Client) int {
 		Subject:      stringPtr(*subject),
 		ProjectID:    intPtr(*projectID),
 		TrackerID:    intPtr(*trackerID),
-		StatusID:     intPtr(*statusID),
-		PriorityID:   intPtr(*priorityID),
-		AuthorID:     intPtr(*authorID),
 		AssignedToID: intPtr(*assignedToID),
+	}
+	if *statusID != 0 {
+		input.StatusID = intPtr(*statusID)
+	}
+	if *priorityID != 0 {
+		input.PriorityID = intPtr(*priorityID)
+	}
+	if *authorID != 0 {
+		input.AuthorID = intPtr(*authorID)
 	}
 	if parentID.set {
 		if parentID.value <= 0 {
@@ -971,8 +968,9 @@ func printIssueUsage() {
 		"  easy8 issue search --q \"onboarding\"",
 		"  easy8 issue search --q \"petr\" --assignee-id 51 --status-id 2 --priority-id 3",
 		"  easy8 issue search --q \"petr\" --assignee \"Alice Doe\" --status \"New\" --priority \"High\" --task-type \"Task\" --project \"Project A\"",
-		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --parent-id 100",
-		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --status-id 1 --priority-id 1 --author-id 1 --assigned-to-id 2 --attachment ./spec.pdf --attachment-description \"Specification\"",
+		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --assigned-to-id 2",
+		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --assigned-to-id 2 --parent-id 100",
+		"  easy8 issue create --subject \"Fix login\" --project-id 1 --tracker-id 1 --assigned-to-id 2 --attachment ./spec.pdf --attachment-description \"Specification\"",
 		"  easy8 issue update 123 --status-id 5",
 		"  easy8 issue update 123 --parent-id 100",
 		"  easy8 issue update 123 --attachment ./error.log",
